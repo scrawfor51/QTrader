@@ -139,10 +139,11 @@ class StockEnvironment:
     day_index = world.iloc[day,:]
     
     day_next = day+1
+    
     s_prime = self.calc_state(world, day_next, holdings)
     
     
-    daily_returns = world.iloc[day_next]['Price'] - world.iloc[day]['Price']
+    daily_returns = world.iloc[day]['Price'] - world.iloc[day-1]['Price']
     
     
     r = daily_returns * holdings  
