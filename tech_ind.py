@@ -107,7 +107,7 @@ Adapted from vectorized code handout.
 """
 def Bollinger_Bands(dataframe, window_size, band_range=2):
     
-    sma_df = dataframe
+    sma_df = dataframe.copy()
     sma_df.columns = ["Price"]
     sma_df["SMA"] = sma_df["Price"].rolling(window=window_size, min_periods=window_size).mean()
     rolling_std = sma_df["Price"].rolling(window=window_size, min_periods=window_size).std()
@@ -190,7 +190,6 @@ def Williams_Percentage_Range(dataframe, window_size=14):
     numerator = (price.rolling(window_size, min_periods=window_size).max() - price)
     denominator = (price.rolling(window_size, min_periods=window_size).max() - price.rolling(window_size, min_periods=window_size).min())
     price['Williams Percentage'] = (numerator/denominator) * -100
-    
     return price
     
     
