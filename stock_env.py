@@ -24,7 +24,6 @@ import tech_ind
 import sys
 import timeit
 import datetime 
-from baseline import Baseline
  
 TRIPS_WITHOUT_DYNA = 500
 TRIPS_WITH_DYNA = 50
@@ -76,12 +75,14 @@ class StockEnvironment:
     current_obv = df.iloc[day]['OBV Normalized'] 
     state = 0
     
+    
     if holdings > 0:  # 3 buckets long, flat, short
         state += 0
     if holdings == 0:
         state += 1
     if holdings < 0:
         state += 2
+    
     
     ws = 0 # 3    buckets oversold, neither, overbought
     if current_williams < -80:
@@ -106,6 +107,7 @@ class StockEnvironment:
     
     state += 9*bbps # add 0, 9, 18, 27
      
+    
     os = 0 # 4  buckets between -100 and -50, between -50 and 0, between 0 and 50 and greater than 50
     if current_obv <= -50:
         os = 0
@@ -117,8 +119,7 @@ class StockEnvironment:
         os = 3
     
     state += 36*os # 
-
-
+    
     #print("Holdings: ", holdings, " Current  Williams: ", current_williams, " current_bbp: ", current_bbp, " current obv: ", current_obv, " STATE: ", state)
     return int(state)
 
@@ -141,7 +142,6 @@ class StockEnvironment:
     day_next = day+1
     
     s_prime = self.calc_state(world, day_next, holdings)
-    
     
     daily_returns = world.iloc[day]['Price'] - world.iloc[day-1]['Price']
     r = daily_returns * holdings  
@@ -210,18 +210,16 @@ class StockEnvironment:
         # Elapse time.
         steps_remaining -= 1
         day_count += 1
-    
         
       # Remember the total reward of each trip.
   
       trip_rewards.append(trip_reward)
       trip_actions.append(trip_positions)
+      
     for i in range(len(trip_rewards)):
         print("For trip number ", i, " net result is: ", trip_rewards[i])
         
-        
-    
-    return np.median(np.array(trip_rewards))
+    return learner
     
 
 
@@ -237,13 +235,48 @@ class StockEnvironment:
     """
     
     world = self.prepare_world(start, end, symbol)
-    baseline = world.copy()
+    baseline = world['Price'].copy()
     baseline.iloc[:] = np.nan
-    baseline['Positions'] =  1000
-    baseline['Positiions'][0] = 0
+    baseline.columns = ['Positions']
+    baseline['Positions'] = 1000
     baseline['Cash'] = 100000 - 1000*world['Price'][0]
     baseline['Portfolio'] = baseline['Cash'] + baseline['Positions'] * world['Price']
-    print("Baseline made: ", baseline['Portfolio'][-1])
+    learner = self.train_learner(start, end, symbol)
+    
+    
+    start = self.calc_state(world, 0, 0)  # start with the new world at the start date and with no positions 
+    goal = [self.calc_state(world, -1, 0), self.calc_state(world, -1, 1000)]   # two fair options that are acceptable end states -- do not want to allow shorting at time end 
+    s = start
+    trip_reward = 0
+    
+    a = learner.test(self.calc_state(world, 0, 0)) # action is long, flat, short -- 0, 1, 2
+
+    steps_remaining = world.shape[0] # Can only move forward in states up until end date
+    day_count = 0
+    trip_positions = []
+    
+    # Each loop is one day
+    while s not in goal and steps_remaining > 0:
+
+      # Apply the most recent action and determine its reward.
+      s, r = self.query_world(world, day_count, s, a) # get a new state and a reward for our action 
+
+      trip_positions.append(a)
+      
+      # Allow the learner to experience what happened.
+      a = learner.train(self.calc_state(world, day_count, a), r)
+
+      # Accumulate the total rewards for this trip.
+      trip_reward += r
+      
+      # Elapse time.
+      steps_remaining -= 1
+      day_count += 1
+      
+    # Remember the total reward of each trip.
+
+    print("Learner reward: ", trip_reward) 
+    print("Baseline made: ", baseline['Portfolio'][-1] - 100000)
   
     
     
