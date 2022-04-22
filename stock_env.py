@@ -144,8 +144,6 @@ class StockEnvironment:
     
     
     daily_returns = world.iloc[day]['Price'] - world.iloc[day-1]['Price']
-    
-    
     r = daily_returns * holdings  
     
     return s_prime, r
@@ -215,8 +213,8 @@ class StockEnvironment:
     
         
       # Remember the total reward of each trip.
+  
       trip_rewards.append(trip_reward)
-      
       trip_actions.append(trip_positions)
     for i in range(len(trip_rewards)):
         print("For trip number ", i, " net result is: ", trip_rewards[i])
@@ -237,8 +235,18 @@ class StockEnvironment:
     Test trip, net result: $31710.00
     Benchmark result: $6690.0000
     """
-    pass
-
+    
+    world = self.prepare_world(start, end, symbol)
+    baseline = world.copy()
+    baseline.iloc[:] = np.nan
+    baseline['Positions'] =  1000
+    baseline['Positiions'][0] = 0
+    baseline['Cash'] = 100000 - 1000*world['Price'][0]
+    baseline['Portfolio'] = baseline['Cash'] + baseline['Positions'] * world['Price']
+    print("Baseline made: ", baseline['Portfolio'][-1])
+  
+    
+    
 
 if __name__ == '__main__':
   # Load the requested stock for the requested dates, instantiate a Q-Learning agent,
