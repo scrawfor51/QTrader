@@ -29,8 +29,6 @@ TRIPS_WITHOUT_DYNA = 500
 TRIPS_WITH_DYNA = 50
 FAILURE_RATE = 0
 
-
-
 class StockEnvironment:
 
   def __init__ (self, fixed = None, floating = None, starting_cash = None, share_limit = None):
@@ -39,6 +37,7 @@ class StockEnvironment:
     self.fixed_cost = fixed
     self.floating_cost = floating
     self.starting_cash = starting_cash
+    self.learner = None
 
   def prepare_world (self, start_date, end_date, symbol):
     """
@@ -67,22 +66,23 @@ class StockEnvironment:
 
   def calc_state (self, df, day, holdings):
     """ Quantizes the state to a single number. """
+    
 
     world = df
     #print("World is: ", world)
+   
     current_williams = df.iloc[day]['Williams Percent Range'] # 0 to -100 # 3 buckets 
     current_bbp = df.iloc[day]['Bollinger Band Percentage'] # x < 0 < x < sma < x < top band < x <--buckets 0, 1, 2, 3
     current_obv = df.iloc[day]['OBV Normalized'] 
     state = 0
     
-    
+        
     if holdings > 0:  # 3 buckets long, flat, short
         state += 0
     if holdings == 0:
         state += 1
     if holdings < 0:
         state += 2
-    
     
     ws = 0 # 3    buckets oversold, neither, overbought
     if current_williams < -80:
@@ -93,7 +93,6 @@ class StockEnvironment:
         ws = 2
         
     state += 3*ws    # add 0, 3, 6     
-    
     
     bbps = 0 # 4 buckets for bbp -- under bottom, between bottom and middle, between middle and top, over top
     if current_bbp < 0:
@@ -106,7 +105,6 @@ class StockEnvironment:
         bbps = 3
     
     state += 9*bbps # add 0, 9, 18, 27
-     
     
     os = 0 # 4  buckets between -100 and -50, between -50 and 0, between 0 and 50 and greater than 50
     if current_obv <= -50:
@@ -137,10 +135,12 @@ class StockEnvironment:
         holdings = 0
     if a == 2:
         holdings = -1000
-    day_index = world.iloc[day,:]
+        
+    day_next = day + 1
     
-    day_next = day+1
-    
+    if day == world.shape[0] - 1:
+        day_next = day
+        
     s_prime = self.calc_state(world, day_next, holdings)
     
     daily_returns = world.iloc[day]['Price'] - world.iloc[day-1]['Price']
@@ -172,11 +172,10 @@ class StockEnvironment:
     
     start = self.calc_state(world, 0, 0)  # start with the new world at the start date and with no positions 
    
-    goal = [self.calc_state(world, -1, 0), self.calc_state(world, -1, 1000)]   # two fair options that are acceptable end states -- do not want to allow shorting at time end 
+    #goal = [self.calc_state(world, -1, 0), self.calc_state(world, -1, 1000)]   # two fair options that are acceptable end states -- do not want to allow shorting at time end 
     
     # Remember the total rewards of each trip individually.
     trip_rewards = []
-    trip_actions = []
     
     # Each loop is one trip through the state space 
     for i in range(trips):
@@ -186,20 +185,19 @@ class StockEnvironment:
       
       s = start
       trip_reward = 0
-      
       a = learner.test(self.calc_state(world, 0, 0)) # action is long, flat, short -- 0, 1, 2
 
       steps_remaining = world.shape[0] # Can only move forward in states up until end date
+      
       day_count = 0
-      trip_positions = []
       
       # Each loop is one day
-      while s not in goal and steps_remaining > 0:
+      
+      while steps_remaining > 0:
 
+        
         # Apply the most recent action and determine its reward.
         s, r = self.query_world(world, day_count, s, a) # get a new state and a reward for our action 
-
-        trip_positions.append(a)
         
         # Allow the learner to experience what happened.
         a = learner.train(self.calc_state(world, day_count, a), r)
@@ -210,15 +208,16 @@ class StockEnvironment:
         # Elapse time.
         steps_remaining -= 1
         day_count += 1
-        
+      
       # Remember the total reward of each trip.
-  
+   
       trip_rewards.append(trip_reward)
-      trip_actions.append(trip_positions)
+      
       
     for i in range(len(trip_rewards)):
         print("For trip number ", i, " net result is: ", trip_rewards[i])
         
+    self.learner = learner
     return learner
     
 
@@ -241,11 +240,11 @@ class StockEnvironment:
     baseline['Positions'] = 1000
     baseline['Cash'] = 100000 - 1000*world['Price'][0]
     baseline['Portfolio'] = baseline['Cash'] + baseline['Positions'] * world['Price']
-    learner = self.train_learner(start, end, symbol)
+    learner = self.learner
     
     
     start = self.calc_state(world, 0, 0)  # start with the new world at the start date and with no positions 
-    goal = [self.calc_state(world, -1, 0), self.calc_state(world, -1, 1000)]   # two fair options that are acceptable end states -- do not want to allow shorting at time end 
+    
     s = start
     trip_reward = 0
     
@@ -256,7 +255,7 @@ class StockEnvironment:
     trip_positions = []
     
     # Each loop is one day
-    while s not in goal and steps_remaining > 0:
+    while steps_remaining > 0:
 
       # Apply the most recent action and determine its reward.
       s, r = self.query_world(world, day_count, s, a) # get a new state and a reward for our action 
@@ -264,7 +263,7 @@ class StockEnvironment:
       trip_positions.append(a)
       
       # Allow the learner to experience what happened.
-      a = learner.train(self.calc_state(world, day_count, a), r)
+      a = learner.test(self.calc_state(world, day_count, a))
 
       # Accumulate the total rewards for this trip.
       trip_reward += r
@@ -275,11 +274,9 @@ class StockEnvironment:
       
     # Remember the total reward of each trip.
 
-    print("Learner reward: ", trip_reward) 
+    print("Learner reward: ", trip_reward)
     print("Baseline made: ", baseline['Portfolio'][-1] - 100000)
   
-    
-    
 
 if __name__ == '__main__':
   # Load the requested stock for the requested dates, instantiate a Q-Learning agent,
@@ -319,7 +316,7 @@ if __name__ == '__main__':
                      eps = args.eps, eps_decay = args.eps_decay )
 
   # Test the learned policy and see how it does.
-
+  
   # In sample.
   env.test_learner( start = args.train_start, end = args.train_end, symbol = args.symbol )
 
