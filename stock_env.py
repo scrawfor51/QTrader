@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 Created on Wed Apr 20 11:36:30 2022
-@author: Stephen
+@author: Stephen & Tugi 
 """
 
 import argparse
@@ -229,7 +229,7 @@ class StockEnvironment:
         
         #Update today's cash
         if holdings_change:
-            world.iloc[day_count, world.columns.get_loc('Cash')] = yesterday_cash - (holdings_change * yesterday_price) - abs(holdings_change * yesterday_price)*self.floating_cost*0.5 - self.fixed_cost
+            world.iloc[day_count, world.columns.get_loc('Cash')] = yesterday_cash - (holdings_change * yesterday_price) - abs(holdings_change * yesterday_price)*self.floating_cost - self.fixed_cost
         else:
             world.iloc[day_count, world.columns.get_loc('Cash')] = yesterday_cash
              
@@ -344,7 +344,6 @@ class StockEnvironment:
     baseline_port = baseline['Portfolio'] - self.starting_cash
     data = {'Learner': learner_portfolio, 'Baseline': baseline_port}
     compare = pd.DataFrame(data)
-    print(compare.columns)
     plot = compare.plot(title="QTrader vs. Baseline", colormap=cm.Accent)
     plot.grid()
     trades = world['Positions'].copy()
@@ -354,6 +353,7 @@ class StockEnvironment:
     
     trades = trades.loc[(trades!=0).any(axis=1)]
     trades['Positions'] = trades['Positions'].cumsum()
+    #print("Number of trades: ", trades.shape)
     
     for day in trades.index:
         if trades.loc[day,'Positions'] > 0:
@@ -373,10 +373,10 @@ if __name__ == '__main__':
   parser = argparse.ArgumentParser(description='Stock environment for Q-Learning.')
 
   date_args = parser.add_argument_group('date arguments')
-  date_args.add_argument('--train_start', default='2018-01-01', metavar='DATE', help='Start of training period.')
-  date_args.add_argument('--train_end', default='2019-12-31', metavar='DATE', help='End of training period.')
-  date_args.add_argument('--test_start', default='2020-01-01', metavar='DATE', help='Start of testing period.')
-  date_args.add_argument('--test_end', default='2021-12-31', metavar='DATE', help='End of testing period.')
+  date_args.add_argument('--train_start', default='2008-01-01', metavar='DATE', help='Start of training period.')
+  date_args.add_argument('--train_end', default='2009-12-31', metavar='DATE', help='End of training period.')
+  date_args.add_argument('--test_start', default='2010-01-01', metavar='DATE', help='Start of testing period.')
+  date_args.add_argument('--test_end', default='2011-12-31', metavar='DATE', help='End of testing period.')
 
   learn_args = parser.add_argument_group('learning arguments')
   learn_args.add_argument('--dyna', default=0, type=int, help='Dyna iterations per experience.')
