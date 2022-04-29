@@ -249,8 +249,9 @@ class StockEnvironment:
         steps_remaining -= 1
         day_count += 1
         
+      trip_rewards.append(trip_reward)
         #Breakout when there is convergance (5 days in a row with same trip rewards)
-        if (i > 5 and trip_rewards[-1] == trip_rewards[-2] and trip_rewards[-2] == trip_rewards[-3] and trip_rewards[-3] == trip_rewards[-4] and trip_rewards[-4] == trip_rewards[-5]):
+      if (i > 5 and trip_rewards[-1] == trip_rewards[-2] and trip_rewards[-2] == trip_rewards[-3] and trip_rewards[-3] == trip_rewards[-4] and trip_rewards[-4] == trip_rewards[-5]):
           break
      
     for i in range(len(trip_rewards)):
