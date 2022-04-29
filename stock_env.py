@@ -14,6 +14,7 @@ import tech_ind
 import sys
 import timeit
 import datetime 
+from matplotlib import cm
  
 TRIPS_WITHOUT_DYNA = 500
 TRIPS_WITH_DYNA = 50
@@ -228,7 +229,7 @@ class StockEnvironment:
         
         #Update today's cash
         if holdings_change:
-            world.iloc[day_count, world.columns.get_loc('Cash')] = yesterday_cash - (holdings_change * yesterday_price) - abs(holdings_change * yesterday_price)*self.floating_cost - self.fixed_cost
+            world.iloc[day_count, world.columns.get_loc('Cash')] = yesterday_cash - (holdings_change * yesterday_price) - abs(holdings_change * yesterday_price)*self.floating_cost*0.5 - self.fixed_cost
         else:
             world.iloc[day_count, world.columns.get_loc('Cash')] = yesterday_cash
              
@@ -275,7 +276,7 @@ class StockEnvironment:
     baseline.iloc[:] = np.nan
     baseline.columns = ['Positions']
     baseline['Positions'] = 1000
-    baseline['Cash'] = 100000 - 1000*world.iloc[0, world.columns.get_loc('Price')]
+    baseline['Cash'] = self.starting_cash - 1000*world.iloc[0, world.columns.get_loc('Price')]
     baseline['Portfolio'] = baseline['Cash'] + baseline['Positions'] * world['Price']
     learner = self.learner
     
@@ -338,9 +339,33 @@ class StockEnvironment:
       
 
     print("Learner reward: ", trip_reward)
-    print("Baseline made: ", baseline['Portfolio'][-1] - 100000)
-  
+    print("Baseline made: ", baseline['Portfolio'][-1] - self.starting_cash)
+    learner_portfolio = world['Portfolio'] - self.starting_cash
+    baseline_port = baseline['Portfolio'] - self.starting_cash
+    data = {'Learner': learner_portfolio, 'Baseline': baseline_port}
+    compare = pd.DataFrame(data)
+    print(compare.columns)
+    plot = compare.plot(title="QTrader vs. Baseline", colormap=cm.Accent)
+    plot.grid()
+    trades = world['Positions'].copy()
+    trades.iloc[1:] = trades.diff().iloc[1:]
+    trades.iloc[0] = 0
+    trades = trades.to_frame()
+    
+    trades = trades.loc[(trades!=0).any(axis=1)]
+    trades['Positions'] = trades['Positions'].cumsum()
+    
+    for day in trades.index:
+        if trades.loc[day,'Positions'] > 0:
+            plt.axvline(x=day, color = 'blue', alpha=0.25) 
+       
+        elif trades.loc[day,'Positions'] < 0:
+            plt.axvline(x=day, color = 'red', alpha=0.25) 
+        else:
+            plt.axvline(x=day, color = 'black', alpha=0.25)
 
+    plt.show()
+    
 if __name__ == '__main__':
   # Load the requested stock for the requested dates, instantiate a Q-Learning agent,
   # and let it start trading.
@@ -384,5 +409,5 @@ if __name__ == '__main__':
   env.test_learner( start = args.train_start, end = args.train_end, symbol = args.symbol )
 
   # Out of sample.  Only do this once you are fully satisfied with the in sample performance!
-  #env.test_learner( start = args.test_start, end = args.test_end, symbol = args.symbol )
+  env.test_learner( start = args.test_start, end = args.test_end, symbol = args.symbol )
   
