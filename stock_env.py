@@ -1,8 +1,12 @@
+"""
+Created on Wed Apr 27 22:50:50 2022
+@author: crawf
+"""
+
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
 Created on Wed Apr 20 11:36:30 2022
-
 @author: Stephen
 """
 
@@ -12,7 +16,6 @@ Use exactly the same indicators as in the prior technical strategy project to pr
 In sample testing should be performed by calling your test() method with the same dates used to train.
 Out of sample testing should be performed by calling your test() method with dates in the future of those used to train.
 Only perform out of sample testing at the very end, once you are satisfied with your in sample results.
-
 State should be (day, shares, indicator_1, indicator_2, indicator_3)
 """
 import argparse
@@ -59,6 +62,9 @@ class StockEnvironment:
     
     world['Bollinger Band Percentage'] = (world['Price'].sub(bb['SMA'], fill_value=np.nan))/(bb['Top Band'].sub(bb['Bottom Band'], fill_value=np.nan))
     world['OBV Normalized'] = obv/(abs(obv).rolling(window=5, min_periods=5).sum()) * 100 # scaled between -100 and 100
+    world['Cash'] = self.starting_cash
+    world['Portfolio'] = world['Cash']
+    world['Positions'] = 0
     world = world.ffill()
     world = world.bfill()
     return world
@@ -68,12 +74,12 @@ class StockEnvironment:
     """ Quantizes the state to a single number. """
     
 
-    world = df
+    df = df.copy()
     #print("World is: ", world)
    
-    current_williams = df.iloc[day]['Williams Percent Range'] # 0 to -100 # 3 buckets 
-    current_bbp = df.iloc[day]['Bollinger Band Percentage'] # x < 0 < x < sma < x < top band < x <--buckets 0, 1, 2, 3
-    current_obv = df.iloc[day]['OBV Normalized'] 
+    current_williams = df.iloc[day, df.columns.get_loc('Williams Percent Range')] # 0 to -100 # 3 buckets 
+    current_bbp = df.iloc[day, df.columns.get_loc('Bollinger Band Percentage')] # x < 0 < x < sma < x < top band < x <--buckets 0, 1, 2, 3
+    current_obv = df.iloc[day, df.columns.get_loc('OBV Normalized')] 
     state = 0
     
         
@@ -124,7 +130,7 @@ class StockEnvironment:
 
   def query_world(self, world, day, s, a):
     # Apply the action to the state and return the new state and reward.
-  
+    world = world.copy()
     if np.random.random() < FAILURE_RATE: # what if we cannot make a perfect trade everytime? 
       a = np.random.randint(3) 
       
@@ -143,8 +149,7 @@ class StockEnvironment:
         
     s_prime = self.calc_state(world, day_next, holdings)
     
-    daily_returns = world.iloc[day]['Price'] - world.iloc[day-1]['Price']
-    r = daily_returns * holdings  
+    r = (world.iloc[day, world.columns.get_loc('Portfolio')]/world.iloc[day-1, world.columns.get_loc('Portfolio')] ) - 1
     
     return s_prime, r
   
@@ -154,10 +159,8 @@ class StockEnvironment:
     """
     Construct a Q-Learning trader and train it through many iterations of a stock
     world.  Store the trained learner in an instance variable for testing.
-
     Print a summary result of what happened at the end of each trip.
     Feel free to include portfolio stats or other information, but AT LEAST:
-
     Trip 499 net result: $13600.00
     """
     
@@ -177,45 +180,86 @@ class StockEnvironment:
     # Remember the total rewards of each trip individually.
     trip_rewards = []
     
+    
     # Each loop is one trip through the state space 
     for i in range(trips):
 
       # A new trip starts with the learner at the start state with no rewards.
       # Get the initial action.
+      world['Cash'] = self.starting_cash
+      world['Portfolio'] = world['Cash']
+      world['Positions'] = 0
       
       s = start
       trip_reward = 0
       a = learner.test(self.calc_state(world, 0, 0)) # action is long, flat, short -- 0, 1, 2
-
-      steps_remaining = world.shape[0] # Can only move forward in states up until end date
       
+      steps_remaining = world.shape[0] # Can only move forward in states up until end date
       day_count = 0
       
+    
       # Each loop is one day
-      
       while steps_remaining > 0:
-
+      #while day_count < 5:
+        # adjust the holdings for the target action
+        
+        holdings = 0
+        if a == 0:
+            holdings = 1000
+        if a == 1:
+            holdings = 0
+        if a == 2:
+            holdings = -1000
+       #print("Trip: ", i, " step: ", j, " world cash is: ", world['Cash'])
+        
+        world.iloc[day_count, world.columns.get_loc('Positions')] = holdings
+        holdings_change = world.iloc[day_count,  world.columns.get_loc('Positions')] - world.iloc[day_count-1,  world.columns.get_loc('Positions')]
+        #print("Trip: ", i, " step: ", day_count, " world holdings change is: ", holdings_change)
+        
+        yesterday_cash = world.iloc[day_count-1, world.columns.get_loc("Cash")]
+        yesterday_price = world.iloc[day_count - 1, world.columns.get_loc('Price')]
+        today_price = world.iloc[day_count, world.columns.get_loc('Price')]
+        if holdings_change:
+            world.iloc[day_count, world.columns.get_loc('Cash')] = yesterday_cash - (holdings_change * yesterday_price) - abs(holdings_change * yesterday_price)*self.floating_cost - self.fixed_cost
+        else:
+            world.iloc[day_count, world.columns.get_loc('Cash')] = yesterday_cash
+            
+        #print("Trip: ", i, " step: ", day_count, " world cash is: ", world.iloc[day_count, world.columns.get_loc('Cash')], " was: ", world.iloc[day_count-1, world.columns.get_loc('Cash')])
+        
+        today_cash = world.iloc[day_count, world.columns.get_loc('Cash')]
+        today_positions = world.iloc[day_count, world.columns.get_loc('Positions')]
+        world.iloc[day_count, world.columns.get_loc('Portfolio')] =  today_positions * today_price + today_cash
+        
+        #print("Trip: ", i, " step: ", day_count, " portfolio is: ", world.iloc[day_count, world.columns.get_loc('Portfolio')], " was: ", world.iloc[day_count-1, world.columns.get_loc('Portfolio')])
+       
         
         # Apply the most recent action and determine its reward.
         s, r = self.query_world(world, day_count, s, a) # get a new state and a reward for our action 
         
         # Allow the learner to experience what happened.
         a = learner.train(self.calc_state(world, day_count, a), r)
-
+       
         # Accumulate the total rewards for this trip.
-        trip_reward += r
+        trip_reward += world.iloc[day_count, world.columns.get_loc('Portfolio')] - world.iloc[day_count-1, world.columns.get_loc('Portfolio')]
         
         # Elapse time.
         steps_remaining -= 1
         day_count += 1
+       
       
       # Remember the total reward of each trip.
    
       trip_rewards.append(trip_reward)
+      print("For trip number ", i, " net result is: ", trip_rewards[i])
+      
+      #Breakout when there is convergance (5 days in a row with same trip rewards)
+      if (i > 5 and trip_rewards[-1] == trip_rewards[-2] and trip_rewards[-2] == trip_rewards[-3] and trip_rewards[-3] == trip_rewards[-4] and trip_rewards[-4] == trip_rewards[-5]):
+        break
       
       
-    for i in range(len(trip_rewards)):
-        print("For trip number ", i, " net result is: ", trip_rewards[i])
+      
+    #for i in range(len(trip_rewards)):
+    #    print("For trip number ", i, " net result is: ", trip_rewards[i])
         
     self.learner = learner
     return learner
@@ -226,9 +270,7 @@ class StockEnvironment:
     """
     Evaluate a trained Q-Learner on a particular stock trading task.
     Print a summary result of what happened during the test.
-
     Feel free to include portfolio stats or other information, but AT LEAST:
-
     Test trip, net result: $31710.00
     Benchmark result: $6690.0000
     """
@@ -238,7 +280,7 @@ class StockEnvironment:
     baseline.iloc[:] = np.nan
     baseline.columns = ['Positions']
     baseline['Positions'] = 1000
-    baseline['Cash'] = 100000 - 1000*world['Price'][0]
+    baseline['Cash'] = 100000 - 1000*world.iloc[0, world.columns.get_loc('Price')]
     baseline['Portfolio'] = baseline['Cash'] + baseline['Positions'] * world['Price']
     learner = self.learner
     
@@ -253,10 +295,40 @@ class StockEnvironment:
     steps_remaining = world.shape[0] # Can only move forward in states up until end date
     day_count = 0
     trip_positions = []
+    world['Cash'] = self.starting_cash
+    world['Portfolio'] = world['Cash']
+    world['Positions'] = 0
     
     # Each loop is one day
     while steps_remaining > 0:
 
+      holdings = 0
+      if a == 0:
+          holdings = 1000
+      if a == 1:
+          holdings = 0
+      if a == 2:
+          holdings = -1000
+      #print("Trip: ", i, " step: ", j, " world cash is: ", world['Cash'])
+       
+      world.iloc[day_count, world.columns.get_loc('Positions')] = holdings
+      holdings_change = world.iloc[day_count,  world.columns.get_loc('Positions')] - world.iloc[day_count-1,  world.columns.get_loc('Positions')]
+      #print("Trip: ", i, " step: ", day_count, " world holdings change is: ", holdings_change)
+      
+      yesterday_cash = world.iloc[day_count-1, world.columns.get_loc("Cash")]
+      yesterday_price = world.iloc[day_count - 1, world.columns.get_loc('Price')]
+      today_price = world.iloc[day_count, world.columns.get_loc('Price')]
+      if holdings_change:
+          world.iloc[day_count, world.columns.get_loc('Cash')] = yesterday_cash - (holdings_change * yesterday_price) - abs(holdings_change * yesterday_price)*self.floating_cost - self.fixed_cost
+      else:
+          world.iloc[day_count, world.columns.get_loc('Cash')] = yesterday_cash
+          
+      #print("Trip: ", i, " step: ", day_count, " world cash is: ", world.iloc[day_count, world.columns.get_loc('Cash')], " was: ", world.iloc[day_count-1, world.columns.get_loc('Cash')])
+      
+      today_cash = world.iloc[day_count, world.columns.get_loc('Cash')]
+      today_positions = world.iloc[day_count, world.columns.get_loc('Positions')]
+      world.iloc[day_count, world.columns.get_loc('Portfolio')] =  today_positions * today_price + today_cash
+          
       # Apply the most recent action and determine its reward.
       s, r = self.query_world(world, day_count, s, a) # get a new state and a reward for our action 
 
@@ -264,9 +336,9 @@ class StockEnvironment:
       
       # Allow the learner to experience what happened.
       a = learner.test(self.calc_state(world, day_count, a))
-
+ 
       # Accumulate the total rewards for this trip.
-      trip_reward += r
+      trip_reward += world.iloc[day_count, world.columns.get_loc('Portfolio')] - world.iloc[day_count-1, world.columns.get_loc('Portfolio')]
       
       # Elapse time.
       steps_remaining -= 1
@@ -323,5 +395,16 @@ if __name__ == '__main__':
   # Out of sample.  Only do this once you are fully satisfied with the in sample performance!
   #env.test_learner( start = args.test_start, end = args.test_end, symbol = args.symbol )
   
-  
-
+© 2022 GitHub, Inc.
+Terms
+Privacy
+Security
+Status
+Docs
+Contact GitHub
+Pricing
+API
+Training
+Blog
+About
+Loading
