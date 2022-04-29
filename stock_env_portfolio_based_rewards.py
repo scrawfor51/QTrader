@@ -151,7 +151,7 @@ class StockEnvironment:
         
     s_prime = self.calc_state(world, day_next, holdings)
     
-    r = world.iloc[day, world.columns.get_loc('Portfolio')] - world.iloc[day-1, world.columns.get_loc('Portfolio')] 
+    r = (world.iloc[day, world.columns.get_loc('Portfolio')]/world.iloc[day-1, world.columns.get_loc('Portfolio')] ) - 1
     
     return s_prime, r
   
@@ -219,9 +219,10 @@ class StockEnvironment:
         #print("Trip: ", i, " step: ", day_count, " world holdings change is: ", holdings_change)
         
         yesterday_cash = world.iloc[day_count-1, world.columns.get_loc("Cash")]
+        yesterday_price = world.iloc[day_count - 1, world.columns.get_loc('Price')]
         today_price = world.iloc[day_count, world.columns.get_loc('Price')]
         if holdings_change:
-            world.iloc[day_count, world.columns.get_loc('Cash')] = yesterday_cash - (holdings_change * today_price) - abs(holdings_change)*self.floating_cost - self.fixed_cost
+            world.iloc[day_count, world.columns.get_loc('Cash')] = yesterday_cash - (holdings_change * yesterday_price) - abs(holdings_change * yesterday_price)*self.floating_cost - self.fixed_cost
         else:
             world.iloc[day_count, world.columns.get_loc('Cash')] = yesterday_cash
             
@@ -241,7 +242,7 @@ class StockEnvironment:
         a = learner.train(self.calc_state(world, day_count, a), r)
        
         # Accumulate the total rewards for this trip.
-        trip_reward += r
+        trip_reward += world.iloc[day_count, world.columns.get_loc('Portfolio')] - world.iloc[day_count-1, world.columns.get_loc('Portfolio')]
         
         # Elapse time.
         steps_remaining -= 1
@@ -251,10 +252,16 @@ class StockEnvironment:
       # Remember the total reward of each trip.
    
       trip_rewards.append(trip_reward)
+      print("For trip number ", i, " net result is: ", trip_rewards[i])
+      
+      #Breakout when there is convergance (5 days in a row with same trip rewards)
+      if (i > 5 and trip_rewards[-1] == trip_rewards[-2] and trip_rewards[-2] == trip_rewards[-3] and trip_rewards[-3] == trip_rewards[-4] and trip_rewards[-4] == trip_rewards[-5]):
+        break
       
       
-    for i in range(len(trip_rewards)):
-        print("For trip number ", i, " net result is: ", trip_rewards[i])
+      
+    #for i in range(len(trip_rewards)):
+    #    print("For trip number ", i, " net result is: ", trip_rewards[i])
         
     self.learner = learner
     return learner
@@ -311,9 +318,10 @@ class StockEnvironment:
       #print("Trip: ", i, " step: ", day_count, " world holdings change is: ", holdings_change)
       
       yesterday_cash = world.iloc[day_count-1, world.columns.get_loc("Cash")]
+      yesterday_price = world.iloc[day_count - 1, world.columns.get_loc('Price')]
       today_price = world.iloc[day_count, world.columns.get_loc('Price')]
       if holdings_change:
-          world.iloc[day_count, world.columns.get_loc('Cash')] = yesterday_cash - (holdings_change * today_price) - abs(holdings_change)*self.floating_cost - self.fixed_cost
+          world.iloc[day_count, world.columns.get_loc('Cash')] = yesterday_cash - (holdings_change * yesterday_price) - abs(holdings_change * yesterday_price)*self.floating_cost - self.fixed_cost
       else:
           world.iloc[day_count, world.columns.get_loc('Cash')] = yesterday_cash
           
@@ -332,7 +340,7 @@ class StockEnvironment:
       a = learner.test(self.calc_state(world, day_count, a))
  
       # Accumulate the total rewards for this trip.
-      trip_reward += r
+      trip_reward += world.iloc[day_count, world.columns.get_loc('Portfolio')] - world.iloc[day_count-1, world.columns.get_loc('Portfolio')]
       
       # Elapse time.
       steps_remaining -= 1
