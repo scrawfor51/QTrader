@@ -1,8 +1,3 @@
-"""
-Created on Wed Apr 27 22:50:50 2022
-@author: crawf
-"""
-
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
@@ -10,14 +5,6 @@ Created on Wed Apr 20 11:36:30 2022
 @author: Stephen
 """
 
-"""
-Do not change your TabularQLearner.py code.  It contains generic Q-Learning that does not care what problem it solves.
-Use exactly the same indicators as in the prior technical strategy project to produce comparable results.
-In sample testing should be performed by calling your test() method with the same dates used to train.
-Out of sample testing should be performed by calling your test() method with dates in the future of those used to train.
-Only perform out of sample testing at the very end, once you are satisfied with your in sample results.
-State should be (day, shares, indicator_1, indicator_2, indicator_3)
-"""
 import argparse
 import numpy as np
 import pandas as pd
@@ -42,11 +29,16 @@ class StockEnvironment:
     self.starting_cash = starting_cash
     self.learner = None
 
+  """
+  Helper method to calculate all the indicator values for the date range.
+
+  @param Start_date: Start date for indicators
+  @param End_date: The last day for the data  
+  @param symbol: The stock symbol to calculat the indicators for
+  @return: A dataframe of the stock data with all the indicators calculated  
+  """
   def prepare_world (self, start_date, end_date, symbol):
-    """
-    Read the relevant price data and calculate some indicators.
-    Return a DataFrame containing everything you need.
-    """
+  
     price_data = tech_ind.get_data(start_date, end_date, symbols = [symbol], include_spy=False)
    
     volume_data = tech_ind.get_data(start_date, end_date, symbols = [symbol], column_name = 'Volume', include_spy=False)
@@ -70,12 +62,18 @@ class StockEnvironment:
     return world
     
 
+  """ 
+  Helper function to calculate the state number of a state given specific holdings and the day it is.
+  
+  @param df: The environmental dataframe with all the stock indicator values
+  @param day: The steps in the date range we are on
+  @param holdings: How many shares of the stock the trader has.
+  @return a number representing the state.
+  """
   def calc_state (self, df, day, holdings):
     """ Quantizes the state to a single number. """
-    
 
     df = df.copy()
-    #print("World is: ", world)
    
     current_williams = df.iloc[day, df.columns.get_loc('Williams Percent Range')] # 0 to -100 # 3 buckets 
     current_bbp = df.iloc[day, df.columns.get_loc('Bollinger Band Percentage')] # x < 0 < x < sma < x < top band < x <--buckets 0, 1, 2, 3
@@ -124,12 +122,20 @@ class StockEnvironment:
     
     state += 36*os # 
     
-    #print("Holdings: ", holdings, " Current  Williams: ", current_williams, " current_bbp: ", current_bbp, " current obv: ", current_obv, " STATE: ", state)
     return int(state)
 
 
+  """
+  A helper function which applies the last day's action and returns the reward and new state.
+
+  @param world: The environment dataframe
+  @param Day: The step of training the learner as on.
+  @param s: The current state representation  
+  @param a: The selected action
+  @return the new state s_prime and the reward for the last action r
+  """
   def query_world(self, world, day, s, a):
-    # Apply the action to the state and return the new state and reward.
+    
     world = world.copy()
     if np.random.random() < FAILURE_RATE: # what if we cannot make a perfect trade everytime? 
       a = np.random.randint(3) 
@@ -154,15 +160,20 @@ class StockEnvironment:
     return s_prime, r
   
 
+  """
+  A class method for training a leaner.
+  
+  @param start: The start date for the training
+  @param end: End date for training
+  @param symbol: The stock symbol to train on 
+  @param Trips: The number of trips to train for
+  @param Dyna: The dyna halluncination value
+  @param eps: The value of epislon for random actions
+  @param eps_decay: The rate at which epsilon shoul decay when a random action is taken.
+  @return a trained learner 
+  """
   def train_learner( self, start = None, end = None, symbol = None, trips = 0, dyna = 0,
                      eps = 0.0, eps_decay = 0.0):
-    """
-    Construct a Q-Learning trader and train it through many iterations of a stock
-    world.  Store the trained learner in an instance variable for testing.
-    Print a summary result of what happened at the end of each trip.
-    Feel free to include portfolio stats or other information, but AT LEAST:
-    Trip 499 net result: $13600.00
-    """
     
     world = self.prepare_world(start, end, symbol)
     
@@ -174,8 +185,6 @@ class StockEnvironment:
       learner = TabularQLearner(states=world_size, actions = 3, epsilon=eps,epsilon_decay=eps_decay)
     
     start = self.calc_state(world, 0, 0)  # start with the new world at the start date and with no positions 
-   
-    #goal = [self.calc_state(world, -1, 0), self.calc_state(world, -1, 1000)]   # two fair options that are acceptable end states -- do not want to allow shorting at time end 
     
     # Remember the total rewards of each trip individually.
     trip_rewards = []
@@ -193,10 +202,8 @@ class StockEnvironment:
       s = start
       trip_reward = 0
       a = learner.test(self.calc_state(world, 0, 0)) # action is long, flat, short -- 0, 1, 2
-      
       steps_remaining = world.shape[0] # Can only move forward in states up until end date
       day_count = 0
-      
     
       # Each loop is one day
       while steps_remaining > 0:
@@ -210,28 +217,24 @@ class StockEnvironment:
             holdings = 0
         if a == 2:
             holdings = -1000
-       #print("Trip: ", i, " step: ", j, " world cash is: ", world['Cash'])
+      
         
         world.iloc[day_count, world.columns.get_loc('Positions')] = holdings
-        holdings_change = world.iloc[day_count,  world.columns.get_loc('Positions')] - world.iloc[day_count-1,  world.columns.get_loc('Positions')]
-        #print("Trip: ", i, " step: ", day_count, " world holdings change is: ", holdings_change)
-        
+        holdings_change = world.iloc[day_count,  world.columns.get_loc('Positions')] - world.iloc[day_count-1,  world.columns.get_loc('Positions')] # Calculate change in position
+       
         yesterday_cash = world.iloc[day_count-1, world.columns.get_loc("Cash")]
         yesterday_price = world.iloc[day_count - 1, world.columns.get_loc('Price')]
         today_price = world.iloc[day_count, world.columns.get_loc('Price')]
+        
+        #Update today's cash
         if holdings_change:
             world.iloc[day_count, world.columns.get_loc('Cash')] = yesterday_cash - (holdings_change * yesterday_price) - abs(holdings_change * yesterday_price)*self.floating_cost - self.fixed_cost
         else:
             world.iloc[day_count, world.columns.get_loc('Cash')] = yesterday_cash
-            
-        #print("Trip: ", i, " step: ", day_count, " world cash is: ", world.iloc[day_count, world.columns.get_loc('Cash')], " was: ", world.iloc[day_count-1, world.columns.get_loc('Cash')])
-        
+             
         today_cash = world.iloc[day_count, world.columns.get_loc('Cash')]
         today_positions = world.iloc[day_count, world.columns.get_loc('Positions')]
-        world.iloc[day_count, world.columns.get_loc('Portfolio')] =  today_positions * today_price + today_cash
-        
-        #print("Trip: ", i, " step: ", day_count, " portfolio is: ", world.iloc[day_count, world.columns.get_loc('Portfolio')], " was: ", world.iloc[day_count-1, world.columns.get_loc('Portfolio')])
-       
+        world.iloc[day_count, world.columns.get_loc('Portfolio')] =  today_positions * today_price + today_cash #Update today's portfolio
         
         # Apply the most recent action and determine its reward.
         s, r = self.query_world(world, day_count, s, a) # get a new state and a reward for our action 
@@ -240,40 +243,31 @@ class StockEnvironment:
         a = learner.train(self.calc_state(world, day_count, a), r)
        
         # Accumulate the total rewards for this trip.
-        trip_reward += world.iloc[day_count, world.columns.get_loc('Portfolio')] - world.iloc[day_count-1, world.columns.get_loc('Portfolio')]
+        trip_reward += world.iloc[day_count, world.columns.get_loc('Portfolio')] - world.iloc[day_count-1, world.columns.get_loc('Portfolio')] # The numeric value between yesterday's portfolio and today
         
         # Elapse time.
         steps_remaining -= 1
         day_count += 1
-       
-      
-      # Remember the total reward of each trip.
-   
-      trip_rewards.append(trip_reward)
-      print("For trip number ", i, " net result is: ", trip_rewards[i])
-      
-      #Breakout when there is convergance (5 days in a row with same trip rewards)
-      if (i > 5 and trip_rewards[-1] == trip_rewards[-2] and trip_rewards[-2] == trip_rewards[-3] and trip_rewards[-3] == trip_rewards[-4] and trip_rewards[-4] == trip_rewards[-5]):
-        break
-      
-      
-      
-    #for i in range(len(trip_rewards)):
-    #    print("For trip number ", i, " net result is: ", trip_rewards[i])
+        
+        #Breakout when there is convergance (5 days in a row with same trip rewards)
+        if (i > 5 and trip_rewards[-1] == trip_rewards[-2] and trip_rewards[-2] == trip_rewards[-3] and trip_rewards[-3] == trip_rewards[-4] and trip_rewards[-4] == trip_rewards[-5]):
+          break
+     
+    for i in range(len(trip_rewards)):
+        print("For trip number ", i, " net result is: ", trip_rewards[i])
         
     self.learner = learner
     return learner
     
 
-
+  """
+  A helper method for testing a learner that has already been trained.
+  
+  @param Start: Start Date
+  @param End: End date
+  @param Symbol: Stock symbol to trade
+  """
   def test_learner( self, start = None, end = None, symbol = None):
-    """
-    Evaluate a trained Q-Learner on a particular stock trading task.
-    Print a summary result of what happened during the test.
-    Feel free to include portfolio stats or other information, but AT LEAST:
-    Test trip, net result: $31710.00
-    Benchmark result: $6690.0000
-    """
     
     world = self.prepare_world(start, end, symbol)
     baseline = world['Price'].copy()
@@ -309,22 +303,19 @@ class StockEnvironment:
           holdings = 0
       if a == 2:
           holdings = -1000
-      #print("Trip: ", i, " step: ", j, " world cash is: ", world['Cash'])
        
       world.iloc[day_count, world.columns.get_loc('Positions')] = holdings
       holdings_change = world.iloc[day_count,  world.columns.get_loc('Positions')] - world.iloc[day_count-1,  world.columns.get_loc('Positions')]
-      #print("Trip: ", i, " step: ", day_count, " world holdings change is: ", holdings_change)
-      
+
       yesterday_cash = world.iloc[day_count-1, world.columns.get_loc("Cash")]
       yesterday_price = world.iloc[day_count - 1, world.columns.get_loc('Price')]
       today_price = world.iloc[day_count, world.columns.get_loc('Price')]
+      
       if holdings_change:
           world.iloc[day_count, world.columns.get_loc('Cash')] = yesterday_cash - (holdings_change * yesterday_price) - abs(holdings_change * yesterday_price)*self.floating_cost - self.fixed_cost
       else:
           world.iloc[day_count, world.columns.get_loc('Cash')] = yesterday_cash
           
-      #print("Trip: ", i, " step: ", day_count, " world cash is: ", world.iloc[day_count, world.columns.get_loc('Cash')], " was: ", world.iloc[day_count-1, world.columns.get_loc('Cash')])
-      
       today_cash = world.iloc[day_count, world.columns.get_loc('Cash')]
       today_positions = world.iloc[day_count, world.columns.get_loc('Positions')]
       world.iloc[day_count, world.columns.get_loc('Portfolio')] =  today_positions * today_price + today_cash
@@ -344,7 +335,6 @@ class StockEnvironment:
       steps_remaining -= 1
       day_count += 1
       
-    # Remember the total reward of each trip.
 
     print("Learner reward: ", trip_reward)
     print("Baseline made: ", baseline['Portfolio'][-1] - 100000)
@@ -395,16 +385,3 @@ if __name__ == '__main__':
   # Out of sample.  Only do this once you are fully satisfied with the in sample performance!
   #env.test_learner( start = args.test_start, end = args.test_end, symbol = args.symbol )
   
-© 2022 GitHub, Inc.
-Terms
-Privacy
-Security
-Status
-Docs
-Contact GitHub
-Pricing
-API
-Training
-Blog
-About
-Loading
